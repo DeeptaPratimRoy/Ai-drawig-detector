@@ -5,7 +5,7 @@ import google.generativeai as genai
 from PIL import Image
 
 # ----------------- CONFIG -----------------
-API_KEY = "type api key here"  # Your Gemini API key
+API_KEY = "AIzaSyDJW0OgqgRdxsN5d1Aeg2PKQkQ63qGI5b4"  # Your Gemini API key
 WIDTH, HEIGHT = 1280, 720
 
 # ----------------- FUNCTIONS -----------------
@@ -30,18 +30,20 @@ def getHandsInfo(img):
 def draw(info, prev_pos, canvas):
     fingers, lmList = info
     current_pos = None
-    if fingers == [0, 1, 0, 0, 0]:  # Index finger up
-        current_pos = lmList[8][0:2]
-        if prev_pos is None:
+    if not paused:  # Only draw if not paused
+        if fingers == [0, 1, 0, 0, 0]:  # Index finger up
+            current_pos = lmList[8][0:2]
+            if prev_pos is None:
+                prev_pos = current_pos
+            cv2.line(canvas, prev_pos, current_pos, (0, 255, 0), 10)
             prev_pos = current_pos
-        cv2.line(canvas, prev_pos, current_pos, (0, 255, 0), 10)
-        prev_pos = current_pos
-    elif fingers == [1, 1, 1, 1, 1]:  # All fingers up
-        canvas = np.zeros_like(canvas)
+        elif fingers == [1, 1, 1, 1, 1]:  # All fingers up
+            canvas = np.zeros_like(canvas)
     return current_pos, canvas
 
 def sendToAI(model, canvas, fingers, task):
-    if fingers == [0, 0, 0, 0, 1]:  # Only pinky up
+    # AI should only work if NOT paused
+    if not paused and fingers == [0, 0, 0, 0, 1]:  # Only pinky up
         pil_image = Image.fromarray(canvas)
         response = model.generate_content([task, pil_image])
         return response.text
@@ -72,9 +74,11 @@ prev_pos = None
 canvas = None
 output_text = ""
 task = "Guess the drawing"  # Default task
+paused = False  # New flag for pause/resume
 
 print("Press '1' for Guess the Drawing, '2' for Solve the Math Problem")
 print("Raise index finger to draw, all fingers to clear, pinky to send to AI")
+print("Two fingers up = Pause | Three fingers up = Resume")
 print("Press 'q' to quit")
 
 # ----------------- MAIN LOOP -----------------
@@ -90,16 +94,27 @@ while True:
 
     info = getHandsInfo(img)
     if info:
+        fingers, lmList = info
+
+        # Check for pause/resume gestures
+        if fingers == [0, 1, 1, 0, 0]:  # Two fingers up
+            paused = True
+        elif fingers == [1, 1, 1, 0, 0]:  # Three fingers up
+            paused = False
+
         prev_pos, canvas = draw(info, prev_pos, canvas)
-        ai_output = sendToAI(model, canvas, info[0], task)
+        ai_output = sendToAI(model, canvas, fingers, task)
         if ai_output:
             output_text = ai_output
 
     image_combined = cv2.addWeighted(img, 0.7, canvas, 0.3, 0)
 
-    # Show task and AI output
+    # Show task, pause state, and AI output
     cv2.putText(image_combined, f"Task: {task}", (50, 50),
                 cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+    if paused:
+        cv2.putText(image_combined, "PAUSED", (WIDTH - 200, 50),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
     if output_text:
         cv2.putText(image_combined, output_text, (50, 100),
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
